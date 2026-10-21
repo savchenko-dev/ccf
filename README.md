@@ -5,7 +5,9 @@ fork of it whenever you need one.
 
 You build up a session that knows your project: the architecture, the conventions, the tricky
 parts. Every new task can start from that context instead of from zero, and the pinned session
-itself never changes, because each run is a `claude --resume <id> --fork-session`.
+itself never changes, because each run is a `claude --resume <id> --fork-session`. When you do
+want to change it, `ccf edit` opens the pinned session itself, and every fork started after that
+inherits what you added.
 
 Works on macOS, Linux and Windows. Single binary, no runtime dependencies.
 
@@ -36,6 +38,8 @@ Or download an archive from [Releases](https://github.com/savchenko-dev/ccf/rele
 ```text
 ccf [name] [claude args...]   fork the pinned session (pins it first if none exist)
 ccf pin [name] [session-id]   pin a session (default: name "main", latest session here)
+ccf edit [name] [claude args...]
+                              resume the pinned session itself, so new forks inherit what you add
 ccf ls                        list pins for the current directory
 ccf rm <name>                 remove a pin
 ccf help | version
@@ -48,7 +52,12 @@ claude                 # build up a session with good project context, then exit
 ccf pin                # pin the latest session in this directory as "main"
 ccf                    # every new task: a fresh fork of "main"
 ccf --model opus       # extra args are passed through to claude
+ccf edit               # add context to "main" itself; forks started later inherit it
 ```
+
+`ccf edit` resumes the pinned session without `--fork-session`, so the session id stays the same
+and the pin keeps pointing at it. Forks that are already running keep the context they started
+with; only forks started after the edit see the new messages.
 
 Several pins per project:
 
@@ -57,6 +66,7 @@ ccf pin backend        # pin the latest session as "backend"
 ccf pin ui 1f3c…       # pin a specific session id as "ui"
 ccf backend            # fork "backend"
 ccf                    # with several pins, pick one interactively
+ccf edit backend       # add context to "backend" itself
 ```
 
 The interactive picker uses [fzf](https://github.com/junegunn/fzf) if it is on `PATH`, and falls

@@ -24,6 +24,8 @@ const usage = `ccf - fork a pinned Claude Code session
 Usage:
   ccf [name] [claude args...]   fork the pinned session (pins it first if none exist)
   ccf pin [name] [session-id]   pin a session (default: name "main", latest session here)
+  ccf edit [name] [claude args...]
+                                resume the pinned session itself, so new forks inherit what you add
   ccf ls                        list pins for the current directory
   ccf rm <name>                 remove a pin
   ccf help | version
@@ -31,7 +33,7 @@ Usage:
 Pins are per directory and live next to Claude Code's own session files.
 `
 
-var reserved = []string{"pin", "ls", "rm", "help", "version"}
+var reserved = []string{"pin", "edit", "ls", "rm", "help", "version"}
 
 type pin struct {
 	name string
@@ -68,6 +70,8 @@ func run(args []string) error {
 	switch cmd {
 	case "pin":
 		return s.pin(args[1:])
+	case "edit":
+		return s.open(args[1:], false)
 	case "ls":
 		return s.list()
 	case "rm":
@@ -82,7 +86,7 @@ func run(args []string) error {
 		fmt.Println("ccf", version)
 		return nil
 	}
-	return s.fork(args)
+	return s.open(args, true)
 }
 
 func claudeConfigDir() (string, error) {
@@ -249,7 +253,11 @@ func (s *store) remove(name string) error {
 	return s.save()
 }
 
-func (s *store) fork(args []string) error {
+func (s *store) open(args []string, fork bool) error {
+	prompt := "fork from> "
+	if !fork {
+		prompt = "edit base> "
+	}
 	var chosen pin
 	switch {
 	case len(args) > 0 && s.indexOf(args[0]) >= 0:
@@ -264,26 +272,32 @@ func (s *store) fork(args []string) error {
 		chosen = s.pins[0]
 	default:
 		var err error
-		if chosen, err = s.choose(); err != nil {
+		if chosen, err = s.choose(prompt); err != nil {
 			return err
 		}
 	}
-	return execClaude(append([]string{"-r", chosen.id, "--fork-session"}, args...))
-}
-
-func (s *store) choose() (pin, error) {
-	if _, err := exec.LookPath("fzf"); err == nil {
-		return s.chooseWithFzf()
+	claudeArgs := []string{"-r", chosen.id}
+	if fork {
+		claudeArgs = append(claudeArgs, "--fork-session")
+	} else {
+		fmt.Fprintf(os.Stderr, "ccf: editing '%s' in place, new forks will inherit it\n", chosen.name)
 	}
-	return s.chooseWithPrompt()
+	return execClaude(append(claudeArgs, args...))
 }
 
-func (s *store) chooseWithFzf() (pin, error) {
+func (s *store) choose(prompt string) (pin, error) {
+	if _, err := exec.LookPath("fzf"); err == nil {
+		return s.chooseWithFzf(prompt)
+	}
+	return s.chooseWithPrompt(prompt)
+}
+
+func (s *store) chooseWithFzf(prompt string) (pin, error) {
 	var lines strings.Builder
 	for _, p := range s.pins {
 		fmt.Fprintf(&lines, "%-16s %s\n", p.name, p.id)
 	}
-	cmd := exec.Command("fzf", "--height=~10", "--prompt=fork from> ")
+	cmd := exec.Command("fzf", "--height=~10", "--prompt="+prompt)
 	cmd.Stdin = strings.NewReader(lines.String())
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
@@ -294,11 +308,11 @@ func (s *store) chooseWithFzf() (pin, error) {
 	return s.pins[s.indexOf(fields[0])], nil
 }
 
-func (s *store) chooseWithPrompt() (pin, error) {
+func (s *store) chooseWithPrompt(prompt string) (pin, error) {
 	for i, p := range s.pins {
 		fmt.Fprintf(os.Stderr, "%2d) %-16s %s\n", i+1, p.name, p.id)
 	}
-	fmt.Fprint(os.Stderr, "fork from> ")
+	fmt.Fprint(os.Stderr, prompt)
 	line, err := bufio.NewReader(os.Stdin).ReadString('\n')
 	if err != nil && line == "" {
 		return pin{}, errors.New("nothing selected")
